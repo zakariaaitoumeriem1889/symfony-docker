@@ -1,0 +1,96 @@
+name: "sf-project"
+
+services:
+    php:
+        container_name: php
+        build:
+            context: ./php
+            dockerfile: Dockerfile
+        volumes:
+            - ../:/var/www/app:delegated
+            - symfony_cache:/var/www/app/var/cache
+            - symfony_log:/var/www/app/var/log
+        depends_on:
+            - database
+        environment:
+            - DATABASE_URL=postgresql://postgres:postgres@database:5432/app?charset=utf8
+            - PHP_FPM_CLEAR_ENV=no
+            - PHP_FPM_LOG_LEVEL=debug
+            - BASH_ENV=/root/.bashrc
+            - APP_ENV=dev
+            - COMPOSER_MEMORY_LIMIT=-1
+            - XDEBUG_MODE=off
+        restart: unless-stopped
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        networks:
+            - network
+    
+    nginx:
+        container_name: nginx
+        image: nginx:alpine
+        ports:
+            - '80:80'
+        volumes:
+            - ../:/var/www/app:cached
+            - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
+            - nginx_logs:/var/log/nginx
+        depends_on:
+            - php
+        networks:
+            - network
+    
+    database:
+        container_name: database
+        image: postgres:15-alpine
+        environment:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+            POSTGRES_DB: app
+        volumes:
+            - db-data:/var/lib/postgresql/data
+        ports:
+            - '5432:5432'
+        healthcheck:
+            test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            - network
+    
+    adminer:
+        container_name: adminer
+        image: adminer:latest
+        environment:
+            ADMINER_DESIGN: hever
+            ADMINER_DEFAULT_SERVER: database
+            ADMINER_DEFAULT_DRIVER: pgsql
+        ports:
+            - "8080:8080"
+        depends_on:
+            - database
+        networks:
+            - network
+    
+    mailpit:
+        container_name: mailpit
+        image: axllent/mailpit:latest
+        environment:
+            MP_SMTP_AUTH_ACCEPT_ANY: 1
+            MP_SMTP_AUTH_ALLOW_INSECURE: 1
+        ports:
+            - "1025:1025"  # SMTP port
+            - "8025:8025"  # Web UI port
+        networks:
+            - network
+
+volumes:
+    db-data:
+    symfony_cache:
+    symfony_log:
+    nginx_logs:
+
+networks:
+    network:
+        driver: bridge
